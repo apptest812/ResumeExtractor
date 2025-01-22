@@ -1,0 +1,49 @@
+#dashboard{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+#dashboard h2{
+    padding: 1rem;
+}
+
+#dashboard .container{
+    width: 80%;
+    min-width: 500px;
+} 
+
+#dashboard .container .description{
+    height: 300px;
+}
+
+#dashboard .description-button{
+    margin-top: 20px;
+    float: right;
+}
+
+.header-section{
+    margin-bottom: 10vh;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;    
+}
+
+.switch-board {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 20px;
+    font-size: 18px;
+}
+
+.switch-board span {
+    margin: 0 10px;
+    font-weight: bold;
+}
+
+.switch-board span.active {
+    color: #007bff;
+}

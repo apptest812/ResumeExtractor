@@ -1,0 +1,39 @@
+[project]
+name = "resume-scanner-api"
+version = "0.1.0"
+description = "Django project template managed by PDM"
+authors = [
+    {name = "meetpogul", email = "meetsp3501@gmail.com"},
+]
+dependencies = [
+    "django~=4.2",
+    "django-rest-framework>=0.1.0",
+    "django-cors-headers>=4.4.0",
+    "schedule>=1.2.2",
+    "bs4>=0.0.2",
+    "odfdo>=3.8.0",
+    "python-docx>=1.1.2",
+    "striprtf>=0.0.26",
+    "langchain-community>=0.2.12",
+    "openai>=1.42.0",
+    "google-generativeai>=0.7.2",
+    "uuid>=1.30",
+    "pdfminer-six>=20240706",
+    "setuptools>=75.6.0",
+    "loguru>=0.7.3",
+    "python-socketio>=5.12.1",
+    "redis>=5.2.1",
+    "djangorestframework-simplejwt>=5.4.0",
+]
+requires-python = "==3.12.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+[tool.pdm]
+distribution = false
+[tool.pdm.scripts]
+migrate = "python manage.py migrate"
+makemigrations = "python manage.py makemigrations"
+start = "python manage.py runserver"
+post_init = { composite = ["pdm install", "migrate", "start"] }
+

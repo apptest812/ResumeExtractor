@@ -1,0 +1,13 @@
+#template h2{
+    padding: 1rem;
+}
+
+#template .main {
+    display: flex;
+}
+
+#template .main .outlet {
+    width: calc(100vw - 300px);
+    padding: 1rem;
+    margin-left: 300px;
+}
