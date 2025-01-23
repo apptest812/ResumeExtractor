@@ -24,7 +24,7 @@ class Jobs:
 
     def __init__(self):
         self.db_service = DB()
-        self.ai_service = AI(model="gemini-1.5-flash")
+        self.ai_service = AI()
         self.ai_scanner_job_counter = 0
         self.llm_ready = False
         self.is_job_running = False
@@ -62,7 +62,7 @@ class Jobs:
         self.is_job_running = self.is_ai_resume_job_running or self.is_ai_job_description_job_running or self.is_ai_compatibility_job_running
 
     # scanner job functions
-    def scanner_add_file_to_db(self, file_record):
+    def scanner_add_file_to_db(self, file_record, model, key):
         """Parse a file (resume or job description) and add it to the database"""
         print(f"Adding file {file_record.id} to database")
         db_object = {}
@@ -81,7 +81,9 @@ class Jobs:
 
             prompt_input = response.get("prompt_input")
             system_message = response.get("system_message")
-            json_string = self.ai_service.run(prompt_input, system_message)
+            self.ai_service = AI(model, key)
+            if self.wait_till_ai_start():
+               json_string = self.ai_service.run(prompt_input, system_message)
 
             try:
                 if json_string and isinstance(json_string, str):
@@ -127,7 +129,11 @@ class Jobs:
             in_progress=True, is_resume=is_resume
         ).order_by("id")
         for file_record in scanner_in_progress:
-            self.scanner_add_file_to_db(file_record)
+            user = file_record.user
+            if user.model and user.key:
+                self.scanner_add_file_to_db(file_record, user.model, user.key)
+            # else:
+            #     self.scanner_add_file_to_db(file_record)
 
     def run_in_queue_scanner_job(self, is_resume):
         """Run in queue scanner job"""

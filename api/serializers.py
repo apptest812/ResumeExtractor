@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Resume, UploadedFile, Experience, Education, JobDescription, Compatibility, Employer, Applicant
+from .models import Resume, UploadedFile, Experience, Education, JobDescription, Compatibility, Recruiter, JobSeeker
 from django.contrib.auth.models import User
 
 class ExperienceSerializer(serializers.ModelSerializer):
@@ -40,14 +40,14 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['username', 'email', 'first_name', 'last_name']
 
-class EmployerSerializer(serializers.ModelSerializer):
+class RecruiterSerializer(serializers.ModelSerializer):
     user = UserSerializer(required=True)
     class Meta:
-        model = Employer
+        model = Recruiter
         fields = '__all__'
 
-class ApplicantSerializer(serializers.ModelSerializer):
+class JobSeekerSerializer(serializers.ModelSerializer):
     user = UserSerializer(required=True)
     class Meta:
-        model = Applicant
+        model = JobSeeker
         fields = '__all__'

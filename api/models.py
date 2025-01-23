@@ -23,6 +23,7 @@ class Resume(models.Model):
     file = models.FileField(upload_to=upload_to)
     uploaded_at = models.DateTimeField()
     json = models.JSONField(null=True, blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     objects = models.Manager()
 
@@ -69,6 +70,7 @@ class UploadedFile(models.Model):
     json = models.JSONField(null=True, blank=True)
     is_resume = models.BooleanField(default=True)
     is_job_description = models.BooleanField(default=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     objects = models.Manager()
 
@@ -109,6 +111,7 @@ class JobDescription(models.Model):
     other_benefits = models.TextField(null=True, blank=True)
     file = models.FileField(upload_to=upload_to)
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     objects = models.Manager()
 
@@ -160,32 +163,39 @@ class Compatibility(models.Model):
     job_compatibility = models.IntegerField(default=0, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='in_queue')
     error = models.TextField(null=True, blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     objects = models.Manager()
 
     def __str__(self):
         return f"Resume {self.resume.id} is {self.resume_compatibility}% compatible with job {self.job_description.id}"
     
-class Employer(models.Model):
+class Recruiter(models.Model):
     TYPE_OF_API_KEYS = [
         ('OpenAI_API_KEY', 'OpenAI_API_KEY'),
         ('GEMINI_API_KEY', 'GEMINI_API_KEY'),
     ]
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    role = models.CharField(max_length=50, default="Employer")
+    role = models.CharField(max_length=50, default="Recruiter")
     api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
     api_key = models.CharField(max_length=500, null=True, blank=True)
-    company_description = models.TextField(max_length=2000)
+    company_description = models.TextField(max_length=2000, null=True)
 
     def __str__(self):
-        return f"{self.user.username} - Employer"
+        return f"{self.user.username} - Recruiter"
 
-class Applicant(models.Model):
+class JobSeeker(models.Model):
+    TYPE_OF_API_KEYS = [
+        ('OpenAI_API_KEY', 'OpenAI_API_KEY'),
+        ('GEMINI_API_KEY', 'GEMINI_API_KEY'),
+    ]
     user = models.OneToOneField(User, on_delete=models.CASCADE)
-    role = models.CharField(max_length=50, default="Applicant")
+    role = models.CharField(max_length=50, default="JobSeeker")
+    api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
+    api_key = models.CharField(max_length=500, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.user.username} - Applicant"
+        return f"{self.user.username} - JobSeeker"
     
 class PasswordReset(models.Model):
     email = models.EmailField(unique=True)

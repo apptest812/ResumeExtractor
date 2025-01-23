@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import FileUploadView, QueueView, ResumeDetailView, JobDescriptionView, DescriptionUploadView, CompatibilityView, ScanCompatibilityView, EmployerSignupView, ApplicantSignupView, LoginView, ResetPasswordView
+from .views import FileUploadView, QueueView, ResumeDetailView, JobDescriptionView, DescriptionUploadView, CompatibilityView, ScanCompatibilityView, RecruiterSignupView, JobSeekerSignupView, LoginView, ResetPasswordView
 urlpatterns = [
     path('upload/', FileUploadView.as_view(), name='file-upload'),
     path('queue/', QueueView.as_view(), name='queue'),
@@ -9,9 +9,9 @@ urlpatterns = [
     path('job/', JobDescriptionView.as_view(), name='job'),
     path('compatibility/', CompatibilityView.as_view(), name='compatibility'),
     path('scan-compatibilities/', ScanCompatibilityView.as_view(), name='scan-compatibilities'),
-    path('employer-data/', views.employer_data, name='employer-data'), #Will be removed in future
-    path('employer-signup/', EmployerSignupView.as_view(), name='employer-signup'),
-    path('applicant-signup/', ApplicantSignupView.as_view(), name='applicant-signup'),
+    path('recruiter-data/', views.recruiter_data, name='recruiter-data'), #Will be removed in future
+    path('recruiter-signup/', RecruiterSignupView.as_view(), name='recruiter-signup'),
+    path('jobseeker-signup/', JobSeekerSignupView.as_view(), name='jobseeker-signup'),
     path('login/', LoginView.as_view(), name='login'),
     path('reset-password/', ResetPasswordView.as_view(), name='reset-password')
 ]

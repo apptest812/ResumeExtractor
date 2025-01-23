@@ -7,8 +7,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import JsonResponse
-from .models import Education, Experience, JobDescription, Resume, UploadedFile, Compatibility, Employer, Applicant, PasswordReset
-from .serializers import UploadedFileSerializer, CompatibilitySerializer, JobDescriptionSerializer, EmployerSerializer, ApplicantSerializer
+from .models import Education, Experience, JobDescription, Resume, UploadedFile, Compatibility, Recruiter, JobSeeker, PasswordReset
+from .serializers import UploadedFileSerializer, CompatibilitySerializer, JobDescriptionSerializer, RecruiterSerializer, JobSeekerSerializer
 from .services.file_store import create_inmemory_uploaded_file
 import socketio
 import os
@@ -413,7 +413,7 @@ class ScanCompatibilityView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-class EmployerSignupView(APIView):
+class RecruiterSignupView(APIView):
     def post(self, request):
         try:
             data = request.data
@@ -434,34 +434,34 @@ class EmployerSignupView(APIView):
             user_object = User.objects.create(username=username, email=email)
             user_object.set_password(password)
             user_object.save()
-            employer_object = Employer.objects.create(user=user_object)
+            recruiter_object = Recruiter.objects.create(user=user_object)
             api_key_type=None
             api_key = None
             company_description = None
             if 'api_key_type' in data:
                 api_key_type = data.get('api_key_type')
-                if api_key_type not in [c[0] for c in Employer.api_key_type.field.choices]:
+                if api_key_type not in [c[0] for c in Recruiter.api_key_type.field.choices]:
                     return Response({"message":"Invalid API Key Type"}, status=status.HTTP_400_BAD_REQUEST)
                 if api_key_type is not None:
-                    employer_object.api_key_type=api_key_type
-                    employer_object.save()
+                    recruiter_object.api_key_type=api_key_type
+                    recruiter_object.save()
             if 'api_key' in data:
                 api_key = data.get('api_key')  
                 if api_key is not None:
-                    employer_object.api_key=api_key
-                    employer_object.save()
+                    recruiter_object.api_key=api_key
+                    recruiter_object.save()
             if 'company_description' in data:
                 company_description = data.get('company_description')
                 if company_description is not None:
-                    employer_object.company_description=company_description
-                    employer_object.save()
-            employer_serialized_data = EmployerSerializer(instance=employer_object)
-            return Response({"message":"User Created Successfully", "data":employer_serialized_data.data}, status=status.HTTP_200_OK)
+                    recruiter_object.company_description=company_description
+                    recruiter_object.save()
+            recruiter_serialized_data = RecruiterSerializer(instance=recruiter_object)
+            return Response({"message":"User Created Successfully", "data":recruiter_serialized_data.data}, status=status.HTTP_200_OK)
         except Exception as e:
             loguru.logger.error(f"Error in SignUp API: {str(e)}")
             return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-class ApplicantSignupView(APIView):
+class JobSeekerSignupView(APIView):
     def post(self, request):
         try:
             data = request.data
@@ -482,9 +482,9 @@ class ApplicantSignupView(APIView):
             user_object = User.objects.create(username=username, email=email)
             user_object.set_password(password)
             user_object.save()
-            applicant_object = Applicant.objects.create(user=user_object)
-            applicant_serialized_data = ApplicantSerializer(instance=applicant_object)
-            return Response({"message":"User Created Successfully", "data":applicant_serialized_data.data}, status=status.HTTP_200_OK)
+            jobseeker_object = JobSeeker.objects.create(user=user_object)
+            jobseeker_serialized_data = JobSeekerSerializer(instance=jobseeker_object)
+            return Response({"message":"User Created Successfully", "data":jobseeker_serialized_data.data}, status=status.HTTP_200_OK)
         except Exception as e:
             loguru.logger.error(f"Error in SignUp API: {str(e)}")
             return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -500,7 +500,7 @@ class LoginView(APIView):
             role = data.get('role')
             if username and password and role:
                 try:
-                    users = User.objects.get(Q(username=username) & (Q(applicant__role=role) | Q(employer__role=role)))
+                    users = User.objects.get(Q(username=username) & (Q(jobseeker__role=role) | Q(recruiter__role=role)))
                     if users:
                         user = authenticate(username=username, password=password)
                         if user:
@@ -623,11 +623,11 @@ class ResetPasswordView(APIView):
             return JsonResponse({"message":"Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
-def employer_data(request):
+def recruiter_data(request):
     try:
-        employer = Employer.objects.all()
-        employer_serialize = EmployerSerializer(instance=employer, many=True)
-        return Response({"data":employer_serialize.data}, status=status.HTTP_200_OK)
+        recruiter = Recruiter.objects.all()
+        recruiter_serialize = RecruiterSerializer(instance=recruiter, many=True)
+        return Response({"data":recruiter_serialize.data}, status=status.HTTP_200_OK)
     except Exception as e:
-        loguru.logger.error(f"Error in Employer Data API: {str(e)}")
+        loguru.logger.error(f"Error in Recruiter Data API: {str(e)}")
         return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

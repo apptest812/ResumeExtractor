@@ -10,16 +10,16 @@ from django.http import HttpResponse, JsonResponse
 
 class AI:
     """AI Class Indicates and create instance of AI service for reusability"""
-    def __init__(self, model="llama3.1"):
+    def __init__(self, model="llama3.1", key=None):
         self.model = model
         if self.model.startswith("gpt"):
             if OPENAI_API_KEY:
-                self.llm = OpenAI(api_key=OPENAI_API_KEY)
+                self.llm = OpenAI(api_key=key)
             else:
                 raise ValueError("OPENAI_API_KEY is not set")
         elif self.model.startswith("gemini"):
             if GEMINI_API_KEY:
-                genai.configure(api_key=GEMINI_API_KEY)
+                genai.configure(api_key=key)
                 generation_config = {
                     "temperature": 1,
                     "top_p": 0.95,

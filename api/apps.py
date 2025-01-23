@@ -21,7 +21,7 @@ class MyAppConfig(AppConfig):
 
     def start_ai_scanner_job(self):
 
-        if self.job.wait_till_ai_start():
+        # if self.job.wait_till_ai_start():
             self.start_thread_func(lambda: self.job.ai_scanner_job(is_resume=True))
             self.start_thread_func(lambda: self.job.ai_scanner_job(is_resume=False))
             self.start_thread_func(lambda: self.job.ai_compatibility_job())
