@@ -7,7 +7,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import JsonResponse
-from .models import Education, Experience, JobDescription, Resume, UploadedFile, Compatibility, Employer, Applicant
+from .models import Education, Experience, JobDescription, Resume, UploadedFile, Compatibility, Employer, Applicant, PasswordReset
 from .serializers import UploadedFileSerializer, CompatibilitySerializer, JobDescriptionSerializer, EmployerSerializer, ApplicantSerializer
 from .services.file_store import create_inmemory_uploaded_file
 import socketio
@@ -17,6 +17,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db.models import Q
 from django.contrib.auth import authenticate, update_session_auth_hash
+from django.core.mail import send_mail
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.conf import settings
+from datetime import datetime
 if "REDIS_CONNECTION_URL" in os.environ:
     external_sio = socketio.RedisManager(os.getenv("REDIS_CONNECTION_URL"), write_only=True)
 else:
@@ -496,7 +500,6 @@ class LoginView(APIView):
             role = data.get('role')
             if username and password and role:
                 try:
-                    print('IN try block')
                     users = User.objects.get(Q(username=username) & (Q(applicant__role=role) | Q(employer__role=role)))
                     if users:
                         user = authenticate(username=username, password=password)
@@ -528,7 +531,96 @@ class LoginView(APIView):
         except Exception as e:
             loguru.logger.error(f"Error in SignUp API: {str(e)}")
             return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class ResetPasswordView(APIView):
+    def get(self, request):
+        try:
+            data = request.GET
+            if 'token' not in data:
+                return JsonResponse({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            token = data.get('token')
+            if token and token is not None:
+                try:
+                    reset_pass_obj = PasswordReset.objects.get(token=token)
+                except PasswordReset.DoesNotExist:
+                    return JsonResponse({"message":"Invalid Token"}, status=status.HTTP_404_NOT_FOUND)
 
+                if reset_pass_obj.expired_at < datetime.today().date():
+                    reset_pass_obj.delete()
+                    return JsonResponse({"message":"Token Expired"}, status=status.HTTP_403_FORBIDDEN)
+                
+                try:
+                    user_obj = User.objects.get(email=reset_pass_obj.email)
+                    reset_pass_obj.delete()
+                except Exception as e:
+                     return JsonResponse({"message":"User Not Found"}, status=status.HTTP_404_NOT_FOUND)
+                
+                body = {
+                    "message":"User Requesting successfully",
+                    "user_id":user_obj.pk
+                }
+                return JsonResponse(body, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            loguru.logger.error(f"Error in GET API of reset Password: {str(e)}")
+            return JsonResponse({"message":"Internal server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    def post(self, request):
+        try:
+            data = request.data
+            if 'email' not in data:
+                return JsonResponse({"message":"Invalid parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            email = data.get('email')
+            if email:
+                if PasswordReset.objects.filter(email=email).exists():
+                    return JsonResponse({"message":"Request for reset password already made"}, status=status.HTTP_406_NOT_ACCEPTABLE)
+                try:
+                    user = User.objects.get(email=email)
+                except User.DoesNotExist:
+                    return JsonResponse({"message":"user doesn't exist with this email ID"}, status=status.HTTP_400_BAD_REQUEST)
+                token_generator = PasswordResetTokenGenerator()
+                token = token_generator.make_token(user) 
+                reset_password = PasswordReset.objects.create(email=email, token=token)
+
+                reset_url = f"{os.environ['FRONTEND_BASE_URL']}/?{token}"
+                subject = "Reset Your Password"
+                message = f"click here {reset_url} to reset your password"
+                try:
+                    send_mail(subject, message, settings.EMAIL_HOST_USER, [email])
+                except Exception as e:
+                    loguru.logger.error(f"Error in Mail sending: {str(e)}")
+                    return JsonResponse({"message":"Error in Mail Sending for reset password"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            else:
+                return JsonResponse({"message":"Email can't be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            return JsonResponse({"message":"Email sent successfully"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            loguru.logger.error(f"Error in reset password API: {str(e)}")
+            return JsonResponse({"message":"Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    def patch(self, request):
+        try:
+            data = request.data
+            if 'new_password' not in data or 'confirm_password' not in data or 'user_id' not in data:
+                return JsonResponse({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            user_id = data.get('user_id')
+            new_password = data.get('new_password')
+            confirm_password = data.get('confirm_password')
+            if not new_password or not confirm_password or not user_id:
+                return JsonResponse({"message":"UserId or Password or Confirm Password can't be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            if len(new_password)<8 or len(confirm_password)<8:
+                return JsonResponse({"message":"Password length must be atleast 8 character"}, status=status.HTTP_400_BAD_REQUEST)
+            if new_password != confirm_password:
+                return JsonResponse({"message":"password and confirm password should be same"}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                user = User.objects.get(pk=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"message":"User Doesn't Exist"}, status=status.HTTP_400_BAD_REQUEST)
+            user.set_password(new_password)
+            user.save()
+            return JsonResponse({"message":"password saved successfully"}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            loguru.logger.error(f"Error in Confirm Password API: {str(e)}")
+            return JsonResponse({"message":"Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['GET'])
 def employer_data(request):

@@ -2,6 +2,8 @@ from django.db import models
 import uuid
 import json
 from django.contrib.auth.models import User
+from datetime import timedelta
+from datetime import datetime
 def upload_to(instance, filename):
     # Get the file extension
     extension = filename.split('.')[-1]
@@ -184,3 +186,19 @@ class Applicant(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - Applicant"
+    
+class PasswordReset(models.Model):
+    email = models.EmailField(unique=True)
+    token = models.CharField(max_length=100, unique=True)
+    created_at = models.DateField(auto_now_add=True)
+    expired_at = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.email}"
+
+    def save(self, *args, **kwargs):
+        if not self.created_at:
+            self.created_at = datetime.today()
+        if not self.expired_at and self.created_at:
+            self.expired_at = self.created_at+timedelta(days=2)
+        return super().save(*args, **kwargs)

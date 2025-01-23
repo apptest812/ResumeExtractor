@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
     'corsheaders',
+    'django_crontab',
     "api",
 ]
 
@@ -88,6 +89,10 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.BasicAuthentication',
     ],
 }
+
+CRONJOBS = [
+    ('*/2 * * * *', 'api.cron.delete_expired_token')
+]
 
 ROOT_URLCONF = "resume_scanner_api.urls"
 
@@ -174,4 +179,10 @@ OPENAI_API_KEY = ""
 # GEMINI
 GEMINI_API_KEY = "AIzaSyCaILkHXEn6GOzMNk6BSn-uvFrXXYFozkg"
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_USE_TLS = True
+EMAIL_PORT = 587
+EMAIL_HOST_USER = 'trainee.qodors@gmail.com'
+EMAIL_HOST_PASSWORD = 'wmty swqr wbdo qmab'
 

@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:ba54a61355adfe7f530f5e44443ab3144106e0ae8e982cac388d4b1ccd41c292"
+content_hash = "sha256:25e07ed50d4c67677b30e656a83f6970b5bf5ff2073582283e992fd517826719"
 
 [[metadata.targets]]
 requires_python = "==3.12.*"
@@ -338,6 +338,18 @@ dependencies = [
 files = [
     {file = "django_cors_headers-4.4.0-py3-none-any.whl", hash = "sha256:5c6e3b7fe870876a1efdfeb4f433782c3524078fa0dc9e0195f6706ce7a242f6"},
     {file = "django_cors_headers-4.4.0.tar.gz", hash = "sha256:92cf4633e22af67a230a1456cb1b7a02bb213d6536d2dcb2a4a24092ea9cebc2"},
+]
+
+[[package]]
+name = "django-crontab"
+version = "0.7.1"
+summary = "dead simple crontab powered job scheduling for django"
+groups = ["default"]
+dependencies = [
+    "Django>=1.8",
+]
+files = [
+    {file = "django-crontab-0.7.1.tar.gz", hash = "sha256:1201810a212460aaaa48eb6a766738740daf42c1a4f6aafecfb1525036929236"},
 ]
 
 [[package]]
