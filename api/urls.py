@@ -13,5 +13,6 @@ urlpatterns = [
     path('recruiter-signup/', RecruiterSignupView.as_view(), name='recruiter-signup'),
     path('jobseeker-signup/', JobSeekerSignupView.as_view(), name='jobseeker-signup'),
     path('login/', LoginView.as_view(), name='login'),
-    path('reset-password/', ResetPasswordView.as_view(), name='reset-password')
+    path('reset-password/', ResetPasswordView.as_view(), name='reset-password'),
+    path('llm_status/', views.llm_status, name='llm_status')
 ]

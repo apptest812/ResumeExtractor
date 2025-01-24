@@ -3,7 +3,7 @@
 from json import loads as load_json, JSONDecodeError
 import os
 import time
-from ..models import UploadedFile, Compatibility
+from ..models import UploadedFile, Compatibility, JobSeeker, Recruiter
 from .ai import AI
 from .db import DB
 from .scrap import read_file
@@ -25,6 +25,7 @@ class Jobs:
     def __init__(self):
         self.db_service = DB()
         self.ai_service = AI()
+        print("default llama3 starting")
         self.ai_scanner_job_counter = 0
         self.llm_ready = False
         self.is_job_running = False
@@ -62,7 +63,7 @@ class Jobs:
         self.is_job_running = self.is_ai_resume_job_running or self.is_ai_job_description_job_running or self.is_ai_compatibility_job_running
 
     # scanner job functions
-    def scanner_add_file_to_db(self, file_record, model, key):
+    def scanner_add_file_to_db(self, file_record, model, api_key):
         """Parse a file (resume or job description) and add it to the database"""
         print(f"Adding file {file_record.id} to database")
         db_object = {}
@@ -81,9 +82,9 @@ class Jobs:
 
             prompt_input = response.get("prompt_input")
             system_message = response.get("system_message")
-            self.ai_service = AI(model, key)
-            if self.wait_till_ai_start():
-               json_string = self.ai_service.run(prompt_input, system_message)
+            self.ai_service = AI(model, api_key)
+            print(f"{model=}, {api_key=}")
+            json_string = self.ai_service.run(prompt_input, system_message)
 
             try:
                 if json_string and isinstance(json_string, str):
@@ -130,10 +131,12 @@ class Jobs:
         ).order_by("id")
         for file_record in scanner_in_progress:
             user = file_record.user
-            if user.model and user.key:
-                self.scanner_add_file_to_db(file_record, user.model, user.key)
-            # else:
-            #     self.scanner_add_file_to_db(file_record)
+            if getattr(user, 'recruiter', None):
+                 recruiter = Recruiter.objects.get(id=user.pk)
+                 self.scanner_add_file_to_db(file_record, recruiter.model, recruiter.api_key)
+            elif getattr(user, 'jobseeker', None):
+                 jobseeker = JobSeeker.objects.get(id=user.pk)
+                 self.scanner_add_file_to_db(file_record, jobseeker.model, jobseeker.api_key)
 
     def run_in_queue_scanner_job(self, is_resume):
         """Run in queue scanner job"""
@@ -141,9 +144,15 @@ class Jobs:
             in_progress=False, is_error=False, is_resume=is_resume
         ).order_by("id")
         for file_record in scanner_queue:
+            user = file_record.user
             file_record.in_progress = True
             file_record.save()
-            self.scanner_add_file_to_db(file_record)
+            if getattr(user, 'recruiter', None):
+                 recruiter = Recruiter.objects.get(id=user.pk)
+                 self.scanner_add_file_to_db(file_record, recruiter.model, recruiter.api_key)
+            elif getattr(user, 'jobseeker', None):
+                 jobseeker = JobSeeker.objects.get(id=user.pk)
+                 self.scanner_add_file_to_db(file_record, jobseeker.model, jobseeker.api_key)
 
     def ai_scanner_job(self, is_resume=True):
         """CronJob for ai scanner to scan resume and parse it"""
@@ -159,7 +168,7 @@ class Jobs:
 
 
     # compatibility job functions
-    def compatibility_add_to_db(self, record):
+    def compatibility_add_to_db(self, record, model, api_key):
         """Add compatibility to the database"""
         try:
             json_object = {}
@@ -169,6 +178,7 @@ class Jobs:
 
             prompt_input = response.get("prompt_input")
             system_message = response.get("system_message")
+            self.ai_service = AI(model, api_key)
             json_string = self.ai_service.run(prompt_input, system_message)
 
             try:
@@ -208,7 +218,13 @@ class Jobs:
             status="in_progress"
         ).order_by("id")
         for record in compatibility_in_progress:
-            self.compatibility_add_to_db(record)
+            user = record.user
+            if getattr(user, 'recruiter', None):
+                 recruiter = Recruiter.objects.get(id=user.pk)
+                 self.compatibility_add_to_db(record, recruiter.model, recruiter.api_key)
+            elif getattr(user, 'jobseeker', None):
+                 jobseeker = JobSeeker.objects.get(id=user.pk)
+                 self.compatibility_add_to_db(record, jobseeker.model, jobseeker.api_key)
 
     def run_in_queue_compatibility_job(self):
         """Run in queue scanner job"""
@@ -216,9 +232,15 @@ class Jobs:
             status="in_queue"
         ).order_by("id")
         for record in compatibility_queue:
+            user = record.user
             record.status = "in_progress"
             record.save()
-            self.compatibility_add_to_db(record)
+            if getattr(user, 'recruiter', None):
+                 recruiter = Recruiter.objects.get(id=user.pk)
+                 self.compatibility_add_to_db(record, recruiter.model, recruiter.api_key)
+            elif getattr(user, 'jobseeker', None):
+                 jobseeker = JobSeeker.objects.get(id=user.pk)
+                 self.compatibility_add_to_db(record, jobseeker.model, jobseeker.api_key)
 
     def ai_compatibility_job(self):
         """CronJob for ai compatibility to check compatibility of resume and job description"""

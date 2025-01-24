@@ -177,6 +177,7 @@ class Recruiter(models.Model):
     ]
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     role = models.CharField(max_length=50, default="Recruiter")
+    model = models.CharField(max_length=50, default="gemini")
     api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
     api_key = models.CharField(max_length=500, null=True, blank=True)
     company_description = models.TextField(max_length=2000, null=True)
@@ -191,6 +192,7 @@ class JobSeeker(models.Model):
     ]
     user = models.OneToOneField(User, on_delete=models.CASCADE)
     role = models.CharField(max_length=50, default="JobSeeker")
+    model = models.CharField(max_length=50, default="gemini")
     api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
     api_key = models.CharField(max_length=500, null=True, blank=True)
 

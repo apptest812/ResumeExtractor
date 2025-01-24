@@ -21,6 +21,8 @@ from django.core.mail import send_mail
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.conf import settings
 from datetime import datetime
+from .services.ai import AI
+import json
 if "REDIS_CONNECTION_URL" in os.environ:
     external_sio = socketio.RedisManager(os.getenv("REDIS_CONNECTION_URL"), write_only=True)
 else:
@@ -631,3 +633,27 @@ def recruiter_data(request):
     except Exception as e:
         loguru.logger.error(f"Error in Recruiter Data API: {str(e)}")
         return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+def llm_status(request):
+    # if request.user:
+    #     user = User.objects.get(id=request.user)
+    #     api_key = user.api_key
+    #     model = user.model
+        print("OK")
+        data=request.data
+        print(f"{data.get('model')},{data.get('api_key')}")
+        try:
+            ai_services = AI(data.get('model'), data.get('api_key'))
+            print("1")
+            if ai_services:
+                try:
+                    response = ai_services.run("ping")
+                    if response:
+                       return JsonResponse({"error":f"response:{response}"}, status=status.HTTP_400_BAD_REQUEST) 
+                except Exception as e:
+                    return JsonResponse({"error":f"response:{response}, exception: {e}"}, status=status.HTTP_400_BAD_REQUEST)   
+            else:
+                return JsonResponse({"error":f"Error on connecting with provided creds: {e}"}, status=status.HTTP_400_BAD_REQUEST)      
+        except Exception as e:
+            return JsonResponse({"error":f"Error on connecting with the selected AI model : {e}"}, status=status.HTTP_400_BAD_REQUEST)    

@@ -40,6 +40,7 @@ class AI:
         """Check if the LLM is running"""
         try:
             if not self.model.startswith("gpt") and not self.model.startswith("gemini"):
+                print("running default llama3")
                 self.run("ping")
             return True
         except (ConnectionError, TimeoutError, ValueError):
