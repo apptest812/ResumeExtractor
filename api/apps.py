@@ -4,6 +4,8 @@ from threading import Thread, Event
 import time
 import schedule
 import os
+from .services.ai import AI
+import asyncio
 
 class MyAppConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
@@ -25,9 +27,9 @@ class MyAppConfig(AppConfig):
             print(f"llama3 is running")
         else:
             print(f"llama3 is not running")
-        self.start_thread_func(lambda: self.job.ai_scanner_job(is_resume=True))
-        self.start_thread_func(lambda: self.job.ai_scanner_job(is_resume=False))
-        self.start_thread_func(lambda: self.job.ai_compatibility_job())
+        self.start_thread_func(lambda: asyncio.run(self.job.ai_scanner_job(is_resume=True)))
+        self.start_thread_func(lambda: asyncio.run(self.job.ai_scanner_job(is_resume=False)))
+        # self.start_thread_func(lambda: asyncio.run(self.job.ai_compatibility_job()))
 
         while not self.stop_event.is_set():
             schedule.run_pending()

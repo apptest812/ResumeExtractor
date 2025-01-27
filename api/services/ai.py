@@ -13,12 +13,12 @@ class AI:
     def __init__(self, model="llama3.1", key=None):
         self.model = model
         if self.model.startswith("gpt"):
-            if OPENAI_API_KEY:
+            if key:
                 self.llm = OpenAI(api_key=key)
             else:
                 raise ValueError("OPENAI_API_KEY is not set")
         elif self.model.startswith("gemini"):
-            if GEMINI_API_KEY:
+            if key:
                 genai.configure(api_key=key)
                 generation_config = {
                     "temperature": 1,

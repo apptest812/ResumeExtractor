@@ -6,7 +6,7 @@ class DB():
     def __init__(self):
         pass
 
-    def add_resume_json_to_db(self, json_object, file):
+    def add_resume_json_to_db(self, json_object, file, user):
         """Add resume JSON to database"""
 
         if not json_object:
@@ -25,7 +25,8 @@ class DB():
                 skills=", ".join(json_object.get("skills", [])),
                 file=file.file,
                 json=file.json,
-                uploaded_at=file.uploaded_at
+                uploaded_at=file.uploaded_at,
+                user=user
             )
 
             # Save Resume first to get its primary key
@@ -66,7 +67,7 @@ class DB():
 
         return resume
 
-    def add_job_description_json_to_db(self, json_object, file):
+    def add_job_description_json_to_db(self, json_object, file, user):
         """Add job description JSON to database"""
         if not json_object:
             raise ValueError("JSON not Found")
@@ -100,7 +101,8 @@ class DB():
                 weekly_working_days=json_object.get("weekly_working_days"),
                 other_benefits=json_object.get("other_benefits"),
                 file=file.file,
-                uploaded_at=file.uploaded_at
+                uploaded_at=file.uploaded_at,
+                user=user
             )
 
             # Save Resume first to get its primary key
