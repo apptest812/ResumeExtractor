@@ -369,6 +369,7 @@ class ScanCompatibilityView(APIView):
     def post(self, request):
         job_description_id = request.data.get('job_description_id')
         resume_id = request.data.get('resume_id')
+        user = User.objects.get(id=request.data.get('user_id'))
 
         if not job_description_id and not resume_id:
             return Response(
@@ -387,8 +388,9 @@ class ScanCompatibilityView(APIView):
                 # Create compatibility records for all resumes not already linked to the job description
                 existing_resumes = Compatibility.objects.filter(job_description_id=job_description_id).values_list('resume_id', flat=True)
                 resumes = Resume.objects.exclude(id__in=existing_resumes)
+
                 Compatibility.objects.bulk_create([
-                    Compatibility(resume=resume, job_description_id=job_description_id, status="in_queue")
+                    Compatibility(resume=resume, job_description_id=job_description_id, status="in_queue", user=user)
                     for resume in resumes
                 ])
                 return Response(
@@ -401,7 +403,7 @@ class ScanCompatibilityView(APIView):
                 existing_jobs = Compatibility.objects.filter(resume_id=resume_id).values_list('job_description_id', flat=True)
                 job_descriptions = JobDescription.objects.exclude(id__in=existing_jobs)
                 Compatibility.objects.bulk_create([
-                    Compatibility(resume_id=resume_id, job_description=job, status="in_queue")
+                    Compatibility(resume_id=resume_id, job_description=job, status="in_queue", user=user)
                     for job in job_descriptions
                 ])
                 return Response(
