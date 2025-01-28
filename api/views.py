@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import JsonResponse
 from .models import Education, Experience, JobDescription, Resume, UploadedFile, Compatibility, Recruiter, JobSeeker, PasswordReset
-from .serializers import UploadedFileSerializer, CompatibilitySerializer, JobDescriptionSerializer, RecruiterSerializer, JobSeekerSerializer
+from .serializers import UploadedFileSerializer, CompatibilitySerializer, JobDescriptionSerializer, RecruiterSerializer, JobSeekerSerializer, ResumeSerializer
 from .services.file_store import create_inmemory_uploaded_file
 import socketio
 import os
@@ -21,6 +21,7 @@ from django.core.mail import send_mail
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.conf import settings
 from datetime import datetime
+from rest_framework.permissions import IsAuthenticated
 if "REDIS_CONNECTION_URL" in os.environ:
     external_sio = socketio.RedisManager(os.getenv("REDIS_CONNECTION_URL"), write_only=True)
 else:
@@ -41,6 +42,7 @@ def get_tokens_for_user(user):
     }
 
 class FileUploadView(APIView):
+    permission_classes = [IsAuthenticated]
     """View to handle file upload"""
 
     def get(self, request):
@@ -92,6 +94,7 @@ class FileUploadView(APIView):
             )
 
 class DescriptionUploadView(APIView):
+    permission_classes = [IsAuthenticated]
     """View to handle file upload"""
 
     def post(self, request):
@@ -125,12 +128,14 @@ class DescriptionUploadView(APIView):
             )
 
 class QueueView(APIView):
+    permission_classes = [IsAuthenticated]
     """View to handle AI Queues"""
     def post(self, request):
         """Add/Update Queue"""
         try:
             upload_id = request.POST.get('id', None)
             is_retry = load_json(request.POST.get('is_retry', "false"))
+            print('isretry: ', is_retry)
             if upload_id:
                 if is_retry:
                     UploadedFile.objects.filter(id=upload_id).update(in_progress=True)
@@ -176,6 +181,7 @@ class QueueView(APIView):
             )
 
 class ResumeDetailView(APIView):
+    permission_classes = [IsAuthenticated]
     """View to handle resume details"""
 
     def get(self, request):
@@ -234,6 +240,7 @@ class ResumeDetailView(APIView):
 
 
 class JobDescriptionView(APIView):
+    permission_classes = [IsAuthenticated]
     """View to handle job description details"""
 
     def get(self, request):
@@ -255,6 +262,8 @@ class JobDescriptionView(APIView):
             )
 
 class CompatibilityView(APIView):
+    permission_classes = [IsAuthenticated]
+
     """View to handle compatibility details"""
     def get(self, request):
         """Get compatibilities"""
@@ -363,6 +372,8 @@ class CompatibilityView(APIView):
             )
 
 class ScanCompatibilityView(APIView):
+    permission_classes = [IsAuthenticated]
+
     """View to handle compatibility details"""
     def post(self, request):
         job_description_id = request.data.get('job_description_id')
@@ -414,6 +425,10 @@ class ScanCompatibilityView(APIView):
             )
 
 class RecruiterSignupView(APIView):
+    '''
+    Handles the registration of new Recruiter users by validating their input, ensuring unique username and email, 
+    and creating a Recruiter profile if all conditions are met.
+    '''
     def post(self, request):
         try:
             data = request.data
@@ -462,27 +477,53 @@ class RecruiterSignupView(APIView):
             return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class JobSeekerSignupView(APIView):
+    '''
+    Handles the registration of new JobSeeker users by validating their input, ensuring unique username and email, 
+    and creating a JobSeeker profile if all conditions are met.
+    '''
     def post(self, request):
         try:
             data = request.data
             if 'username' not in data or 'email' not in data or 'password' not in data or 'confirm_password' not in data:
                 return Response({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            
             username = data.get('username')
             email = data.get('email')
             password = data.get('password')
             confirm_password = data.get('confirm_password')
+
             if User.objects.filter(username=username).exists():
                 return Response({"message":"User with same username already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            
             if User.objects.filter(email=email).exists():
                 return Response({"message":"User with same email already exists"}, status=status.HTTP_400_BAD_REQUEST)
+            
             if len(password)<8 or len(confirm_password)<8:
                 return Response({"message":"Password must be atleast of 8 characters"}, status=status.HTTP_400_BAD_REQUEST)
+            
             if password != confirm_password:
                 return Response({"message":"password and confirm password should be same"}, status=status.HTTP_400_BAD_REQUEST)
+            
             user_object = User.objects.create(username=username, email=email)
             user_object.set_password(password)
             user_object.save()
+
             jobseeker_object = JobSeeker.objects.create(user=user_object)
+            api_key_type=None
+            api_key = None
+            if 'api_key_type' in data:
+                api_key_type = data.get('api_key_type')
+                if api_key_type not in [c[0] for c in Recruiter.api_key_type.field.choices]:
+                    return Response({"message":"Invalid API Key Type"}, status=status.HTTP_400_BAD_REQUEST)
+                if api_key_type is not None:
+                    jobseeker_object.api_key_type=api_key_type
+                    jobseeker_object.save()
+            if 'api_key' in data:
+                api_key = data.get('api_key')  
+                if api_key is not None:
+                    jobseeker_object.api_key=api_key
+                    jobseeker_object.save()
+            
             jobseeker_serialized_data = JobSeekerSerializer(instance=jobseeker_object)
             return Response({"message":"User Created Successfully", "data":jobseeker_serialized_data.data}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -493,17 +534,26 @@ class LoginView(APIView):
     def post(self, request):
         try:
             data=request.data
+            '''Check if 'username', 'password', and 'role' are provided in the request data.'''
             if 'username' not in data or 'password' not in data or 'role' not in data:
                 return Response({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            
             username = data.get('username')
             password = data.get('password')
             role = data.get('role')
+            
+            '''Check if username, password, and role are non-empty.'''
             if username and password and role:
                 try:
-                    users = User.objects.get(Q(username=username) & (Q(jobseeker__role=role) | Q(recruiter__role=role)))
+                    users = User.objects.filter(Q(username=username) & (Q(jobseeker__role=role) | Q(recruiter__role=role)))
+                    
+                    '''If users matching the criteria are found.'''
                     if users:
+
+                        '''Authenticate the user based on username and password'''
                         user = authenticate(username=username, password=password)
                         if user:
+                            ''' Generate authentication tokens for the authenticated user'''
                             tokens = get_tokens_for_user(user)
                             body = {
                                 "message":f"{role} Login Successfully",
@@ -516,7 +566,8 @@ class LoginView(APIView):
                                 'last_name':user.last_name
                             }
                             response = JsonResponse(body, status=status.HTTP_200_OK)
-                        
+
+                            '''Set the Authorization header with the access token for client-side use.'''
                             response['Authorization'] = f"Bearer {tokens['access']}"
                             
                             return response
@@ -533,27 +584,41 @@ class LoginView(APIView):
             return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
 class ResetPasswordView(APIView):
+    '''user authentication not required here because reset-password will bve only called when user forgets the password.'''
     def get(self, request):
         try:
             data = request.GET
+            '''When the user submits the email ID, they'll receive a link with a token.
+                The token will be required here to validate the password reset request.'''
+        
+            '''Check if the 'token' parameter is present in the request'''
             if 'token' not in data:
                 return JsonResponse({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
             token = data.get('token')
+
+            '''If a token is provided, process it'''
             if token and token is not None:
+                '''Check if the token exists in the database for password reset request'''
                 try:
+                    '''Try to find the PasswordReset object corresponding to the token'''
                     reset_pass_obj = PasswordReset.objects.get(token=token)
                 except PasswordReset.DoesNotExist:
+                    '''If the token does not exist in the database, return an error message'''
                     return JsonResponse({"message":"Invalid Token"}, status=status.HTTP_404_NOT_FOUND)
 
+                '''If the token is expired, delete it and return a response'''
                 if reset_pass_obj.expired_at < datetime.today().date():
                     reset_pass_obj.delete()
                     return JsonResponse({"message":"Token Expired"}, status=status.HTTP_403_FORBIDDEN)
                 
+                '''If the token is valid, find the user associated with the token's email'''
                 try:
-                    user_obj = User.objects.get(email=reset_pass_obj.email)
+                    '''Try to find the user associated with the email stored in the PasswordReset object'''
+                    user_obj = User.objects.get(email=reset_pass_obj.email) 
                     reset_pass_obj.delete()
                 except Exception as e:
-                     return JsonResponse({"message":"User Not Found"}, status=status.HTTP_404_NOT_FOUND)
+                    '''If no user is found with the corresponding email, return an error message'''
+                    return JsonResponse({"message":"User Not Found"}, status=status.HTTP_404_NOT_FOUND)
                 
                 body = {
                     "message":"User Requesting successfully",
@@ -564,34 +629,50 @@ class ResetPasswordView(APIView):
         except Exception as e:
             loguru.logger.error(f"Error in GET API of reset Password: {str(e)}")
             return JsonResponse({"message":"Internal server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
     def post(self, request):
         try:
             data = request.data
+            '''Check if 'email' is present in the request data. If not, return an error.'''
             if 'email' not in data:
                 return JsonResponse({"message":"Invalid parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            
             email = data.get('email')
             if email:
+
+                '''Check if a password reset request has already been made for the provided email.'''
                 if PasswordReset.objects.filter(email=email).exists():
                     return JsonResponse({"message":"Request for reset password already made"}, status=status.HTTP_406_NOT_ACCEPTABLE)
+                
+                '''Check if the user exists with the provided email.'''
                 try:
                     user = User.objects.get(email=email)
                 except User.DoesNotExist:
                     return JsonResponse({"message":"user doesn't exist with this email ID"}, status=status.HTTP_400_BAD_REQUEST)
+                
+                '''Generate a unique password reset token using the user's details'''
                 token_generator = PasswordResetTokenGenerator()
                 token = token_generator.make_token(user) 
+
+                '''Create a PasswordReset object to store the email and token'''
                 reset_password = PasswordReset.objects.create(email=email, token=token)
 
                 reset_url = f"{os.environ['FRONTEND_BASE_URL']}/?{token}"
                 subject = "Reset Your Password"
                 message = f"click here {reset_url} to reset your password"
+
+                '''Send the email to the user with the reset link'''
                 try:
                     send_mail(subject, message, settings.EMAIL_HOST_USER, [email])
                 except Exception as e:
                     loguru.logger.error(f"Error in Mail sending: {str(e)}")
                     return JsonResponse({"message":"Error in Mail Sending for reset password"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                
             else:
                 return JsonResponse({"message":"Email can't be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            
             return JsonResponse({"message":"Email sent successfully"}, status=status.HTTP_200_OK)
+        
         except Exception as e:
             loguru.logger.error(f"Error in reset password API: {str(e)}")
             return JsonResponse({"message":"Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -599,21 +680,32 @@ class ResetPasswordView(APIView):
     def patch(self, request):
         try:
             data = request.data
+            '''Check if 'new_password', 'confirm_password', and 'user_id' are present in the request data.'''
             if 'new_password' not in data or 'confirm_password' not in data or 'user_id' not in data:
                 return JsonResponse({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
             user_id = data.get('user_id')
             new_password = data.get('new_password')
             confirm_password = data.get('confirm_password')
+
+            '''Check if any of the required fields are empty.'''
             if not new_password or not confirm_password or not user_id:
                 return JsonResponse({"message":"UserId or Password or Confirm Password can't be empty"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            '''Check if the password length is at least 8 characters.'''
             if len(new_password)<8 or len(confirm_password)<8:
                 return JsonResponse({"message":"Password length must be atleast 8 character"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            '''Check if the new password and confirm password match.'''
             if new_password != confirm_password:
                 return JsonResponse({"message":"password and confirm password should be same"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            '''Check if the user exists in the database using the provided user_id.'''
             try:
                 user = User.objects.get(pk=user_id)
             except User.DoesNotExist:
                 return JsonResponse({"message":"User Doesn't Exist"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            '''Update the user's password and save the changes.'''
             user.set_password(new_password)
             user.save()
             return JsonResponse({"message":"password saved successfully"}, status=status.HTTP_200_OK)
@@ -622,12 +714,46 @@ class ResetPasswordView(APIView):
             loguru.logger.error(f"Error in Confirm Password API: {str(e)}")
             return JsonResponse({"message":"Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@api_view(['GET'])
-def recruiter_data(request):
-    try:
-        recruiter = Recruiter.objects.all()
-        recruiter_serialize = RecruiterSerializer(instance=recruiter, many=True)
-        return Response({"data":recruiter_serialize.data}, status=status.HTTP_200_OK)
-    except Exception as e:
-        loguru.logger.error(f"Error in Recruiter Data API: {str(e)}")
-        return Response({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class UserDataView(APIView):
+    '''This view is for checking the authenticated user and fetching user-specific data.'''
+    permission_classes = [IsAuthenticated] # Ensure the user is authenticated before allowing access to this view.
+
+    def get(self, request):
+        try:
+            user = request.user
+            data = request.GET
+            '''Check if 'user_id' is provided in the GET parameters. If not, return an error.'''
+            if 'user_id' not in data:
+                return JsonResponse({"message":"Invalid Parameters"}, status=status.HTTP_400_BAD_REQUEST)
+            user_id=data.get('user_id')
+
+            '''Check if the user with the provided user_id exists in the database.'''
+            try:
+                user_obj = User.objects.get(pk=user_id)
+            except User.DoesNotExist:
+                return JsonResponse({"message":"User Doesn't exist"}, status=status.HTTP_404_NOT_FOUND)
+            
+            '''Check if the user is either a recruiter or a jobseeker by looking at their roles.'''
+            if getattr(user_obj, 'recruiter', None):
+                '''If the user is a recruiter, fetch all resumes(uploaded by all users) and job descriptions posted by this user'''
+                resumes = Resume.objects.all()
+                jobs = JobDescription.objects.filter(user=user_obj)
+
+                resume_serialized_data = ResumeSerializer(instance=resumes, many=True)
+                job_serialized_data = JobDescriptionSerializer(instance=jobs, many=True)
+                return JsonResponse({"jobs":job_serialized_data.data, "resumes":resume_serialized_data.data}, status=status.HTTP_200_OK)
+            
+            elif getattr(user_obj, 'jobseeker', None):
+                '''If the user is a jobseeker, fetch the resume(own resume) and all job descriptions available'''
+                resumes = Resume.objects.filter(user=user_obj)
+                jobs = JobDescription.objects.all()
+
+                resume_serialized_data = ResumeSerializer(instance=resumes, many=True)
+                job_serialized_data = JobDescriptionSerializer(instance=jobs, many=True)
+                return JsonResponse({"jobs":job_serialized_data.data, "resumes":resume_serialized_data.data}, status=status.HTTP_200_OK)
+            else:
+                return JsonResponse({"message":"User doesn't have any specific role"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            loguru.logger.error(f"Error in Fetch the Data of recruiter: {str(e)}")
+            return JsonResponse({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        

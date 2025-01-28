@@ -14,7 +14,7 @@ class EducationSerializer(serializers.ModelSerializer):
 
 class ResumeSerializer(serializers.ModelSerializer):
     experiences = ExperienceSerializer(many=True)
-    education_details = EducationSerializer(many=True)
+    educations = EducationSerializer(many=True)
 
     class Meta:
         model = Resume
