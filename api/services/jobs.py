@@ -140,10 +140,10 @@ class Jobs:
         """Get all the files that are in queue (synchronous method)"""
         return UploadedFile.objects.filter(in_progress=False, is_error=False, is_resume=is_resume).order_by("id")
 
-    def is_file_in_progress_for_user(self, user, file_id):
+    def is_file_in_progress_for_user(self, user, file_id, is_queue=False):
         """Check if user has any other files in progress and updating in_progress state (synchronous method)"""
         is_data = UploadedFile.objects.filter(user=user, in_progress=True).exclude(id=file_id).exists()
-        if not is_data:
+        if not is_data and is_queue:
            file_data= UploadedFile.objects.get(id=file_id)
            file_data.in_progress =True
            file_data.save()
@@ -159,7 +159,7 @@ class Jobs:
         jobseeker= JobSeeker.objects.get(user=user)
         return jobseeker.model, jobseeker.api_key 
                
-    async def process_progress_task(self, file_record, user):
+    async def process_job_resume_task(self, file_record, user):
         try:
             if await sync_to_async(getattr)(user, 'recruiter', None):
                 print("recruiter found")
@@ -172,18 +172,7 @@ class Jobs:
             else:
                 print('No recruiter or jobseeker found for user') 
         except Exception as e:
-            print(f"Error processing file {file_record.id}: {e}")
-
-    async def process_queue_task(self, file_record, user): 
-        try:
-            if await sync_to_async(getattr)(user, 'recruiter', None):
-                model, api_key = await sync_to_async(self.get_recruiter)(user)
-                await self.scanner_add_file_to_db(file_record, model, api_key)
-            elif await sync_to_async(getattr)(user, 'jobseeker', None):
-                model, api_key = await sync_to_async(self.get_jobseeker)(user)
-                await self.scanner_add_file_to_db(file_record, model, api_key)
-        except Exception as e:
-            print(f"Error processing file {file_record.id}: {e}")        
+            print(f"Error processing file {file_record.id}: {e}")     
 
     async def run_in_progress_scanner_job(self, is_resume):
         """Run in progress scanner job"""
@@ -192,15 +181,13 @@ class Jobs:
         async for file_record in scanner_in_progress:
             #extract user based file data before executing loop
             user = await sync_to_async(lambda: file_record.user)()
-            print(f"User: {user}")
+            print(f"{user=}")
             if await sync_to_async(self.is_file_in_progress_for_user)(user, file_record.id):
-                file_record.in_progress = False
-                await sync_to_async(lambda:file_record.save)()
                 print(f"Skipping file {file_record.id} inside progress for user {user.id} as they already have a file in progress.")
                 continue
 
             #creating concurrent event loop
-            task = self.process_progress_task(file_record, user)
+            task = self.process_job_resume_task(file_record, user)
             tasks.append(task)
         await asyncio.gather(*tasks)
             
@@ -212,12 +199,12 @@ class Jobs:
             #extract user based file data before executing loop
             user = await sync_to_async(lambda: file_record.user)()
             print(f"{user=}")
-            if await sync_to_async(self.is_file_in_progress_for_user)(user, file_record.id):
+            if await sync_to_async(self.is_file_in_progress_for_user)(user, file_record.id, is_queue= True):
                 print(f"Skipping file {file_record.id} in queue for user {user.id} as they already have a file in progress.")
                 continue
             
             #creating concurrent event loop
-            task = self.process_queue_task(file_record,user)
+            task = self.process_job_resume_task(file_record,user)
             tasks.append(task)
         await asyncio.gather(*tasks)              
 
@@ -236,6 +223,36 @@ class Jobs:
 
 
     # # compatibility job functions
+    def is_compatibility_in_progress_for_user(self, record, user, is_queue=False):
+         is_compatibility = False
+         if getattr(user, 'recruiter', None):
+                is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(job_description=record.job_description).exists()
+         if getattr(user, 'jobseeker', None):
+                is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(resume=record.resume).exists()
+         
+         if not is_compatibility and is_queue:
+                record.status = "in_progress"
+                record.save()
+
+         return is_compatibility
+    
+    def get_compatibilty_progress(self):
+       return Compatibility.objects.filter(status="in_progress").order_by("id")
+
+    def get_compatibilty_queue(self):
+       return Compatibility.objects.filter(status="in_queue").order_by("id")
+    
+    async def process_compatibilty_task(self, record, user):
+        try:
+            if await sync_to_async(getattr)(user, 'recruiter', None):
+                model, api_key = await sync_to_async(self.get_recruiter)(user)
+                await self.compatibility_add_to_db(record, model, api_key)
+            elif await sync_to_async(getattr)(user, 'jobseeker', None):
+                model, api_key = await sync_to_async(self.get_jobseeker)(user)
+                await self.compatibility_add_to_db(record, model, api_key)
+        except Exception as e:
+                print(f"Error processing file {record.id}: {e}")
+
     async def compatibility_add_to_db(self, record, model, api_key):
         """Add compatibility to the database"""
         try:
@@ -246,8 +263,19 @@ class Jobs:
 
             prompt_input = response.get("prompt_input")
             system_message = response.get("system_message")
-            self.ai_service = AI(model, api_key)
-            json_string = await sync_to_async(self.ai_service.run)(prompt_input, system_message)
+
+            try:
+                self.ai_service = AI(model, api_key)
+                print(f"{model=}, {api_key=}")
+                #Run AI service asynchronously in executor (since it's a blocking call)
+                json_string = await sync_to_async(self.ai_service.run)(prompt_input, system_message)
+
+            except Exception as e:
+                print(f"Error initializing AI model {model} with API key {api_key}: {e}")
+                record.status = "is_error"
+                record.error = str(e)
+                await sync_to_async(record.save)()         
+                return
 
             try:
                 if json_string and isinstance(json_string, str):
@@ -281,48 +309,44 @@ class Jobs:
     
     async def run_in_progress_compatibility_job(self):
         """Run in progress scanner job"""
-        async for record in await sync_to_async(lambda:Compatibility.objects.filter(status="in_progress").order_by("id"))():
+        tasks=[]
+        compatibility_progress = await sync_to_async(self.get_compatibilty_progress)() 
+        async for record in compatibility_progress:
             user = await sync_to_async(lambda:record.user)()
-
-            if await sync_to_async(lambda: Compatibility.objects.filter(user=user, status="in_progress").exclude(resume=record.resume).exists())():
+            print(f"user={user}, resume = {await sync_to_async(lambda:record.resume.id)()},job= {await sync_to_async(lambda:record.job_description.id)()}")
+            if await sync_to_async(self.is_compatibility_in_progress_for_user)(record, user, is_queue=False):
                 print(f"Skipping Compatibility {record.id} for user {user.id} as they already have a compatibility in progress.")
                 continue
-            try:
-                if await sync_to_async(getattr)(user, 'recruiter', None):
-                    recruiter = Recruiter.objects.get(id=user.pk)
-                    self.compatibility_add_to_db(record, recruiter.model, recruiter.api_key)
-                elif  await sync_to_async(getattr)(user, 'jobseeker', None):
-                    jobseeker = JobSeeker.objects.get(id=user.pk)
-                    self.compatibility_add_to_db(record, jobseeker.model, jobseeker.api_key)
-            except Exception as e:
-                print(f"Error processing file {record.id}: {e}")          
+            
+            ##creating concurrent event loop
+            task = self.process_compatibilty_task(record, user)
+            tasks.append(task)
+        await asyncio.gather(*tasks)      
+                 
 
     async def run_in_queue_compatibility_job(self):
         """Run in queue scanner job"""
-        for record in await sync_to_async(lambda:Compatibility.objects.filter(status="in_queue").order_by("id"))():
+        tasks=[]
+        compatibility_queue = await sync_to_async(self.get_compatibilty_queue)() 
+        async for record in compatibility_queue:
             user = await sync_to_async(lambda:record.user)()
-            record.status = "in_progress"
-            await sync_to_async(record.save)()
-
-            if await sync_to_async(lambda: Compatibility.objects.filter(user=user, status="in_progress").exclude(resume=record.resume).exists())():
+            print(f"user={user}, resume = {await sync_to_async(lambda:record.resume.id)()},job= {await sync_to_async(lambda:record.job_description.id)()}")
+            if await sync_to_async(self.is_compatibility_in_progress_for_user)(record, user, is_queue=True):
                 print(f"Skipping Compatibility {record.id} for user {user.id} as they already have a compatibility in progress.")
                 continue
-            try:
-                if getattr(user, 'recruiter', None):
-                    recruiter = Recruiter.objects.get(id=user.pk)
-                    self.compatibility_add_to_db(record, recruiter.model, recruiter.api_key)
-                elif getattr(user, 'jobseeker', None):
-                    jobseeker = JobSeeker.objects.get(id=user.pk)
-                    self.compatibility_add_to_db(record, jobseeker.model, jobseeker.api_key)
-            except Exception as e:
-                print(f"Error processing file {record.id}: {e}")          
+
+            #creating concurrent event loop
+            task=self.process_compatibilty_task(record, user)
+            tasks.append(task)
+        await asyncio.gather(*tasks)          
+                     
 
     async def ai_compatibility_job(self):
         """CronJob for ai compatibility to check compatibility of resume and job description"""
         if not self.is_ai_compatibility_job_running:
-            # print("AI Compatibility job started")
+            print("AI Compatibility job started")
             self.set_is_job_running(True, False, False)
             await self.run_in_progress_compatibility_job()
             await self.run_in_queue_compatibility_job()
             self.set_is_job_running(False, False, False)
-            # print("AI Compatibility job completed")
+            print("AI Compatibility job completed")
