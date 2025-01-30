@@ -22,6 +22,8 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.conf import settings
 from datetime import datetime
 from rest_framework.permissions import IsAuthenticated
+from .services.ai import AI
+import json
 if "REDIS_CONNECTION_URL" in os.environ:
     external_sio = socketio.RedisManager(os.getenv("REDIS_CONNECTION_URL"), write_only=True)
 else:
@@ -378,6 +380,7 @@ class ScanCompatibilityView(APIView):
     def post(self, request):
         job_description_id = request.data.get('job_description_id')
         resume_id = request.data.get('resume_id')
+        user = User.objects.get(id=request.data.get('user_id'))
 
         if not job_description_id and not resume_id:
             return Response(
@@ -396,8 +399,9 @@ class ScanCompatibilityView(APIView):
                 # Create compatibility records for all resumes not already linked to the job description
                 existing_resumes = Compatibility.objects.filter(job_description_id=job_description_id).values_list('resume_id', flat=True)
                 resumes = Resume.objects.exclude(id__in=existing_resumes)
+
                 Compatibility.objects.bulk_create([
-                    Compatibility(resume=resume, job_description_id=job_description_id, status="in_queue")
+                    Compatibility(resume=resume, job_description_id=job_description_id, status="in_queue", user=user)
                     for resume in resumes
                 ])
                 return Response(
@@ -410,7 +414,7 @@ class ScanCompatibilityView(APIView):
                 existing_jobs = Compatibility.objects.filter(resume_id=resume_id).values_list('job_description_id', flat=True)
                 job_descriptions = JobDescription.objects.exclude(id__in=existing_jobs)
                 Compatibility.objects.bulk_create([
-                    Compatibility(resume_id=resume_id, job_description=job, status="in_queue")
+                    Compatibility(resume_id=resume_id, job_description=job, status="in_queue", user=user)
                     for job in job_descriptions
                 ])
                 return Response(
@@ -757,3 +761,27 @@ class UserDataView(APIView):
             loguru.logger.error(f"Error in Fetch the Data of recruiter: {str(e)}")
             return JsonResponse({"message":"Internal Server Error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+
+@api_view(['GET'])
+def llm_status(request):
+    # if request.user:
+    #     user = User.objects.get(id=request.user)
+    #     api_key = user.api_key
+    #     model = user.model
+        print("OK")
+        data=request.data
+        print(f"{data.get('model')},{data.get('api_key')}")
+        try:
+            ai_services = AI(data.get('model'), data.get('api_key'))
+            print("1")
+            if ai_services:
+                try:
+                    response = ai_services.run("ping")
+                    if response:
+                       return JsonResponse({"error":f"response:{response}"}, status=status.HTTP_400_BAD_REQUEST) 
+                except Exception as e:
+                    return JsonResponse({"error":f"response:{response}, exception: {e}"}, status=status.HTTP_400_BAD_REQUEST)   
+            else:
+                return JsonResponse({"error":f"Error on connecting with provided creds: {e}"}, status=status.HTTP_400_BAD_REQUEST)      
+        except Exception as e:
+            return JsonResponse({"error":f"Error on connecting with the selected AI model : {e}"}, status=status.HTTP_400_BAD_REQUEST)    
