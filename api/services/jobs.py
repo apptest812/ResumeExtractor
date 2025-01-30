@@ -10,6 +10,11 @@ from .scrap import read_file
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from asgiref.sync import sync_to_async
+from django.http import JsonResponse
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Q
+
 
 AI_START_ATTEMPTS = 3
 WAIT_INTERVAL = 10
@@ -225,11 +230,12 @@ class Jobs:
     # # compatibility job functions
     def is_compatibility_in_progress_for_user(self, record, user, is_queue=False):
          is_compatibility = False
-         if getattr(user, 'recruiter', None):
-                is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(job_description=record.job_description).exists()
-         if getattr(user, 'jobseeker', None):
-                is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(resume=record.resume).exists()
-         
+        #  if getattr(user, 'recruiter', None):
+        #         is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(job_description=record.job_description).exists()
+        #  if getattr(user, 'jobseeker', None):
+        #         is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(resume=record.resume).exists()
+        
+         is_compatibility =  Compatibility.objects.filter(user=user, status="in_progress").exclude(id=record.id).exists()
          if not is_compatibility and is_queue:
                 record.status = "in_progress"
                 record.save()
@@ -237,23 +243,27 @@ class Jobs:
          return is_compatibility
     
     def get_compatibilty_progress(self):
-       return Compatibility.objects.filter(status="in_progress").order_by("id")
+       current_time = timezone.now()
+       time_threashold = current_time - timedelta(minutes=15)
+       return Compatibility.objects.filter(status="in_progress").filter(Q(user__jobseeker__resource_timeout__lte=time_threashold)|Q(user__resume__resource_timeout__lte=time_threashold)).order_by("id")
 
     def get_compatibilty_queue(self):
-       return Compatibility.objects.filter(status="in_queue").order_by("id")
+       current_time = timezone.now()
+       time_threashold = current_time - timedelta(minutes=15)
+       return Compatibility.objects.filter(status="in_queue").filter(Q(user__jobseeker__resource_timeout__lte=time_threashold)|Q(user__resume__resource_timeout__lte=time_threashold)).order_by("id")
     
     async def process_compatibilty_task(self, record, user):
         try:
             if await sync_to_async(getattr)(user, 'recruiter', None):
                 model, api_key = await sync_to_async(self.get_recruiter)(user)
-                await self.compatibility_add_to_db(record, model, api_key)
+                await self.compatibility_add_to_db(record, model, api_key, user)
             elif await sync_to_async(getattr)(user, 'jobseeker', None):
                 model, api_key = await sync_to_async(self.get_jobseeker)(user)
-                await self.compatibility_add_to_db(record, model, api_key)
+                await self.compatibility_add_to_db(record, model, api_key, user)
         except Exception as e:
                 print(f"Error processing file {record.id}: {e}")
 
-    async def compatibility_add_to_db(self, record, model, api_key):
+    async def compatibility_add_to_db(self, record, model, api_key, user):
         """Add compatibility to the database"""
         try:
             json_object = {}
@@ -278,14 +288,28 @@ class Jobs:
                 return
 
             try:
-                if json_string and isinstance(json_string, str):
+                if isinstance(json_string, JsonResponse) and json_string.status_code == 429:
+                    print(f"{json_string.status_code=}")
+                    record.status = "in_progress"
+                    await sync_to_async(record.save)() 
+                    if await sync_to_async(getattr(record.user, 'jobseeker', None)):
+                        jobseeker=JobSeeker.objects.filter(user=user)
+                        jobseeker.resource_timeout = timezone.now()
+                        jobseeker.save()
+                    if await sync_to_async(getattr(record.user, 'recruiter', None)):
+                        recruiter=Recruiter.objects.filter(user=user)
+                        recruiter.resource_timeout = timezone.now()
+                        recruiter.save()    
+                    return
+
+                elif json_string and isinstance(json_string, str):
                     json_object = load_json(json_string)
                 else:
                     raise TypeError(
                         f"Response is not a valid JSON string for compatibility record {record.id}"
                     )
             except (JSONDecodeError, TypeError, ValueError) as e:
-                print(f"Error parsing JSON for compatibility record {record.id}: {e}")
+                print(f"Error parsing JSON for compatibility record {record.id}: {e.args[0]}")
                 raise e
             except Exception as e:
                 print(f"Unexpected error while parsing JSON for compatibility record {record.id}: {e}")

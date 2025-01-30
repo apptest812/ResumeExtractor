@@ -433,7 +433,6 @@ class AI:
                 return response.text
             except ResourceExhausted as e:
                 loguru.logger.error(f"Error 429 occurs: {str(e)}")
-                time.sleep(900)
                 return JsonResponse({"message":"Resource exhausted"},status=429)
             except Exception as e:
                 loguru.logger.error(f"Error 429 occurs: {str(e)}")

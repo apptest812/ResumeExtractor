@@ -181,6 +181,7 @@ class Recruiter(models.Model):
     api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
     api_key = models.CharField(max_length=500, null=True, blank=True)
     company_description = models.TextField(max_length=2000, null=True)
+    resource_timeout = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
         return f"{self.user.username} - Recruiter"
@@ -195,6 +196,7 @@ class JobSeeker(models.Model):
     model = models.CharField(max_length=50, default="gemini")
     api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
     api_key = models.CharField(max_length=500, null=True, blank=True)
+    resource_timeout = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
         return f"{self.user.username} - JobSeeker"
