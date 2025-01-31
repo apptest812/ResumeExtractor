@@ -4,6 +4,7 @@ import json
 from django.contrib.auth.models import User
 from datetime import timedelta
 from datetime import datetime
+from django.utils import timezone
 def upload_to(instance, filename):
     # Get the file extension
     extension = filename.split('.')[-1]
@@ -183,8 +184,14 @@ class Recruiter(models.Model):
     company_description = models.TextField(max_length=2000, null=True)
     resource_timeout = models.DateTimeField(blank=True, null=True)
 
+    def save(self, *args, **kwargs):
+        if not self.resource_timeout:
+            self.resource_timeout = timezone.now() - timedelta(hours=1)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user.username} - Recruiter"
+     
 
 class JobSeeker(models.Model):
     TYPE_OF_API_KEYS = [
@@ -197,6 +204,11 @@ class JobSeeker(models.Model):
     api_key_type = models.CharField(max_length=50, choices=TYPE_OF_API_KEYS, default='GEMINI_API_KEY')
     api_key = models.CharField(max_length=500, null=True, blank=True)
     resource_timeout = models.DateTimeField(blank=True, null=True)
+
+    def save(self, *args, **kwargs):
+        if not self.resource_timeout:
+            self.resource_timeout = timezone.now() - timedelta(hours=1)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.username} - JobSeeker"

@@ -14,10 +14,12 @@ from django.http import JsonResponse
 from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Q
+import loguru
 
 
 AI_START_ATTEMPTS = 3
 WAIT_INTERVAL = 10
+REQUEST_LIMIT_TIMEOUT = 15
 
 
 def get_temp_json():
@@ -40,6 +42,7 @@ class Jobs:
         self.is_ai_resume_job_running = False
         self.is_ai_job_description_job_running = False
         self.is_ai_compatibility_job_running = False
+        self.request_limit_timeout_users_list = list()
 
     def wait_till_ai_start(self):
         """Wait till AI is started"""
@@ -69,7 +72,7 @@ class Jobs:
         self.is_job_running = self.is_ai_resume_job_running or self.is_ai_job_description_job_running or self.is_ai_compatibility_job_running
 
     # Scanner job functions
-    async def scanner_add_file_to_db(self, file_record, model, api_key):
+    async def scanner_add_file_to_db(self, file_record, model, api_key, user):
         """Parse a file (resume or job description) and add it to the database"""
         print(f"Adding file {file_record.id} to database")
         file_type = "resume" if file_record.is_resume else "job_description"
@@ -107,6 +110,25 @@ class Jobs:
                 return
 
             try:
+                if isinstance(json_string, JsonResponse) and json_string.status_code == 429:
+                    print(f"{json_string.status_code=}")
+                    file_record.in_progress = False
+                    await sync_to_async(file_record.save)() 
+                    # Check if user has a jobseeker and update resource_timeout
+                    if await sync_to_async(getattr)(user, 'jobseeker', None):
+                        jobseeker = await sync_to_async(lambda: JobSeeker.objects.get(user=user))()
+                        jobseeker.resource_timeout = timezone.now()
+                        await sync_to_async(jobseeker.save)()
+                        loguru.logger.info(f"Jobseeker {user} limit exhausted")
+
+                    # Check if user has a recruiter and update resource_timeout
+                    if await sync_to_async(getattr)(user, 'recruiter', None):
+                        recruiter = await sync_to_async(lambda: Recruiter.objects.get(user=user))()
+                        recruiter.resource_timeout = timezone.now()
+                        await sync_to_async(recruiter.save)()
+                        loguru.logger.info(f"Recruiter {user} limit exhausted")
+                    return
+                        
                 if json_string and isinstance(json_string, str):
                     json_object = load_json(json_string)
                     file_record.json = json_object
@@ -139,12 +161,18 @@ class Jobs:
             
     def get_scanner_in_progress(self, is_resume):
         """Get all the files that are in progress (synchronous method)"""
-        return UploadedFile.objects.filter(in_progress=True, is_resume=is_resume).order_by("id")
+        current_time = timezone.now()
+        time_threshold = current_time - timedelta(minutes=REQUEST_LIMIT_TIMEOUT)
+        upload_data = UploadedFile.objects.filter(in_progress=True, is_resume=is_resume).filter(Q(user__recruiter__resource_timeout__lte=time_threshold)|Q(user__jobseeker__resource_timeout__lte=time_threshold)).order_by("id")
+        return upload_data
 
     def get_scanner_in_queue(self, is_resume):
         """Get all the files that are in queue (synchronous method)"""
-        return UploadedFile.objects.filter(in_progress=False, is_error=False, is_resume=is_resume).order_by("id")
-
+        current_time = timezone.now()
+        time_threshold = current_time - timedelta(minutes=REQUEST_LIMIT_TIMEOUT)
+        upload_data= UploadedFile.objects.filter(in_progress=False, is_error=False, is_resume=is_resume).filter(Q(user__recruiter__resource_timeout__lte=time_threshold)|Q(user__jobseeker__resource_timeout__lte=time_threshold)).order_by("id")
+        return upload_data
+    
     def is_file_in_progress_for_user(self, user, file_id, is_queue=False):
         """Check if user has any other files in progress and updating in_progress state (synchronous method)"""
         is_data = UploadedFile.objects.filter(user=user, in_progress=True).exclude(id=file_id).exists()
@@ -169,11 +197,11 @@ class Jobs:
             if await sync_to_async(getattr)(user, 'recruiter', None):
                 print("recruiter found")
                 model, api_key = await sync_to_async(self.get_recruiter)(user)
-                await self.scanner_add_file_to_db(file_record, model, api_key)
+                await self.scanner_add_file_to_db(file_record, model, api_key, user)
             elif await sync_to_async(getattr)(user, 'jobseeker', None):
                 print('jobseeker found')
                 model, api_key = await sync_to_async(self.get_jobseeker)(user)
-                await self.scanner_add_file_to_db(file_record, model, api_key)
+                await self.scanner_add_file_to_db(file_record, model, api_key, user)
             else:
                 print('No recruiter or jobseeker found for user') 
         except Exception as e:
@@ -244,13 +272,18 @@ class Jobs:
     
     def get_compatibilty_progress(self):
        current_time = timezone.now()
-       time_threashold = current_time - timedelta(minutes=15)
-       return Compatibility.objects.filter(status="in_progress").filter(Q(user__jobseeker__resource_timeout__lte=time_threashold)|Q(user__resume__resource_timeout__lte=time_threashold)).order_by("id")
+       time_threshold = current_time - timedelta(minutes=REQUEST_LIMIT_TIMEOUT)
+       compatibilities = Compatibility.objects.filter(status='in_progress').filter(Q(user__recruiter__resource_timeout__lte=time_threshold)|Q(user__jobseeker__resource_timeout__lte=time_threshold)).order_by('id')
+       return compatibilities
 
     def get_compatibilty_queue(self):
        current_time = timezone.now()
-       time_threashold = current_time - timedelta(minutes=15)
-       return Compatibility.objects.filter(status="in_queue").filter(Q(user__jobseeker__resource_timeout__lte=time_threashold)|Q(user__resume__resource_timeout__lte=time_threashold)).order_by("id")
+       time_threshold = current_time - timedelta(minutes=REQUEST_LIMIT_TIMEOUT)
+       self.request_limit_timeout_users_list = [data.user.username for data in Compatibility.objects.filter(status='in_queue').filter(Q(user__recruiter__resource_timeout__gt=time_threshold)|Q(user__jobseeker__resource_timeout__gt=time_threshold)).order_by('id')]
+       self.request_limit_timeout_users_list= list(set(self.request_limit_timeout_users_list))
+       loguru.logger.info(f"Request Limit Timeout Users List: {self.request_limit_timeout_users_list}")
+       compatibilities = Compatibility.objects.filter(status='in_queue').filter(Q(user__recruiter__resource_timeout__lte=time_threshold)|Q(user__jobseeker__resource_timeout__lte=time_threshold)).order_by('id')
+       return compatibilities
     
     async def process_compatibilty_task(self, record, user):
         try:
@@ -290,16 +323,21 @@ class Jobs:
             try:
                 if isinstance(json_string, JsonResponse) and json_string.status_code == 429:
                     print(f"{json_string.status_code=}")
-                    record.status = "in_progress"
+                    record.status = "in_queue"
                     await sync_to_async(record.save)() 
-                    if await sync_to_async(getattr(record.user, 'jobseeker', None)):
-                        jobseeker=JobSeeker.objects.filter(user=user)
+                    # Check if user has a jobseeker and update resource_timeout
+                    if await sync_to_async(getattr)(user, 'jobseeker', None):
+                        jobseeker = await sync_to_async(lambda: JobSeeker.objects.get(user=user))()
                         jobseeker.resource_timeout = timezone.now()
-                        jobseeker.save()
-                    if await sync_to_async(getattr(record.user, 'recruiter', None)):
-                        recruiter=Recruiter.objects.filter(user=user)
+                        await sync_to_async(jobseeker.save)()
+                        loguru.logger.info(f"Jobseeker {user} limit exhausted")
+
+                    # Check if user has a recruiter and update resource_timeout
+                    if await sync_to_async(getattr)(user, 'recruiter', None):
+                        recruiter = await sync_to_async(lambda: Recruiter.objects.get(user=user))()
                         recruiter.resource_timeout = timezone.now()
-                        recruiter.save()    
+                        await sync_to_async(recruiter.save)()
+                        loguru.logger.info(f"Recruiter {user} limit exhausted")
                     return
 
                 elif json_string and isinstance(json_string, str):
